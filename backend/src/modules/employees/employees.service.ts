@@ -19,12 +19,33 @@ export class EmployeesService {
     private readonly wifiSessionRepository: Repository<WiFiSession>,
   ) {}
 
-  async findByMsnv(msnv: string): Promise<Employee | null> {
+  // =========================
+  // EMPLOYEE
+  // =========================
+
+  async findByMsnv(
+    msnv: string,
+  ): Promise<Employee | null> {
     return this.employeeRepository.findOne({
       where: { msnv },
       relations: ['devices'],
     });
   }
+
+  async create(data: {
+    msnv: string;
+    name: string;
+    email?: string;
+  }): Promise<Employee> {
+    const employee =
+      this.employeeRepository.create(data);
+
+    return this.employeeRepository.save(employee);
+  }
+
+  // =========================
+  // DEVICE
+  // =========================
 
   async findDeviceByMac(
     macAddress: string,
@@ -35,14 +56,19 @@ export class EmployeesService {
     });
   }
 
-  async create(data: {
-    msnv: string;
-    name: string;
-    email?: string;
-  }): Promise<Employee> {
-    const employee = this.employeeRepository.create(data);
-
-    return this.employeeRepository.save(employee);
+  async findDevicesByMsnv(
+    msnv: string,
+  ): Promise<WiFiDevice[]> {
+    return this.wifiDeviceRepository.find({
+      where: {
+        employee: {
+          msnv: msnv,
+        },
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+    });
   }
 
   async addDevice(
@@ -52,15 +78,94 @@ export class EmployeesService {
       deviceName?: string;
     },
   ): Promise<WiFiDevice> {
-    const device = this.wifiDeviceRepository.create({
-      macAddress: data.macAddress,
-      deviceName: data.deviceName,
-      employee,
-    });
+    const device =
+      this.wifiDeviceRepository.create({
+        macAddress: data.macAddress,
+        deviceName: data.deviceName,
+        employee,
+      });
 
     return this.wifiDeviceRepository.save(device);
   }
 
+  async disableDevice(
+    deviceId: string,
+  ): Promise<WiFiDevice | null> {
+    const device =
+      await this.wifiDeviceRepository.findOne({
+        where: {
+          id: deviceId,
+        },
+      });
+
+    if (!device) {
+      return null;
+    }
+
+    device.isActive = false;
+
+    await this.wifiDeviceRepository.save(device);
+
+    // Revoke active session
+    const activeSession =
+      await this.findActiveSessionByDevice(
+        deviceId,
+      );
+
+    if (activeSession) {
+      activeSession.isActive = false;
+      activeSession.endedAt = new Date();
+
+      await this.wifiSessionRepository.save(
+        activeSession,
+      );
+    }
+
+    return device;
+  }
+
+  async enableDevice(
+    deviceId: string,
+  ): Promise<WiFiDevice | null> {
+    const device =
+      await this.wifiDeviceRepository.findOne({
+        where: {
+          id: deviceId,
+        },
+      });
+
+    if (!device) {
+      return null;
+    }
+
+    device.isActive = true;
+
+    return this.wifiDeviceRepository.save(device);
+  }
+
+  // =========================
+  // WIFI SESSION
+  // =========================
+  async findSessionsByMsnv(
+    msnv: string,
+  ): Promise<WiFiSession[]> {
+    return this.wifiSessionRepository.find({
+      where: {
+        device: {
+          employee: {
+            msnv,
+          },
+        },
+      },
+      relations: [
+        'device',
+        'device.employee',
+      ],
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+  }
   async createSession(
     device: WiFiDevice,
     durationMinutes = 480,
@@ -81,7 +186,9 @@ export class EmployeesService {
         endedAt: null,
       });
 
-    return this.wifiSessionRepository.save(session);
+    return this.wifiSessionRepository.save(
+      session,
+    );
   }
 
   async findSessionById(
@@ -98,25 +205,26 @@ export class EmployeesService {
     });
   }
 
-
   async endSession(
-  sessionId: string,
-): Promise<WiFiSession | null> {
-  const session =
-    await this.wifiSessionRepository.findOne({
-      where: {
-        id: sessionId,
-      },
-    });
+    sessionId: string,
+  ): Promise<WiFiSession | null> {
+    const session =
+      await this.wifiSessionRepository.findOne({
+        where: {
+          id: sessionId,
+        },
+      });
 
-  if (!session) {
-    return null;
-  }
+    if (!session) {
+      return null;
+    }
 
-  session.isActive = false;
-  session.endedAt = new Date();
+    session.isActive = false;
+    session.endedAt = new Date();
 
-    return this.wifiSessionRepository.save(session);
+    return this.wifiSessionRepository.save(
+      session,
+    );
   }
 
   async expireSessionIfNeeded(
@@ -139,22 +247,41 @@ export class EmployeesService {
     return session;
   }
 
-
   async findActiveSessionByDevice(
     deviceId: string,
   ): Promise<WiFiSession | null> {
-    return this.wifiSessionRepository.findOne({
-      where: {
-        device: {
-          id: deviceId,
+    const session =
+      await this.wifiSessionRepository.findOne({
+        where: {
+          device: {
+            id: deviceId,
+          },
+          isActive: true,
         },
-        isActive: true,
-      },
-      relations: [
-        'device',
-        'device.employee',
-      ],
-    });
+        relations: [
+          'device',
+          'device.employee',
+        ],
+      });
+
+    if (!session) {
+      return null;
+    }
+
+    const now = new Date();
+
+    if (now >= session.expiresAt) {
+      session.isActive = false;
+      session.endedAt = now;
+
+      await this.wifiSessionRepository.save(
+        session,
+      );
+
+      return null;
+    }
+
+    return session;
   }
 
   async checkSessionAccess(
@@ -169,8 +296,13 @@ export class EmployeesService {
 
     const now = new Date();
 
-    if (session.isActive && now >= session.expiresAt) {
-      return this.expireSessionIfNeeded(session);
+    if (
+      session.isActive &&
+      now >= session.expiresAt
+    ) {
+      return this.expireSessionIfNeeded(
+        session,
+      );
     }
 
     return session;

@@ -1,12 +1,13 @@
+import { EmployeesService } from './employees.service';
+
 import {
   Body,
   Controller,
   Get,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
-
-import { EmployeesService } from './employees.service';
 
 @Controller('employees')
 export class EmployeesController {
@@ -14,10 +15,18 @@ export class EmployeesController {
     private readonly employeesService: EmployeesService,
   ) {}
 
+  // =========================
+  // EMPLOYEE
+  // =========================
+
   @Get('msnv/:msnv')
-  async findByMsnv(@Param('msnv') msnv: string) {
+  async findByMsnv(
+    @Param('msnv') msnv: string,
+  ) {
     const employee =
-      await this.employeesService.findByMsnv(msnv);
+      await this.employeesService.findByMsnv(
+        msnv,
+      );
 
     if (!employee) {
       return {
@@ -32,6 +41,56 @@ export class EmployeesController {
     };
   }
 
+  @Post()
+  async create(
+    @Body()
+    body: {
+      msnv: string;
+      name: string;
+      email?: string;
+    },
+  ) {
+    const employee =
+      await this.employeesService.create(body);
+
+    return {
+      success: true,
+      message: 'Tạo nhân viên thành công',
+      data: employee,
+    };
+  }
+
+  // =========================
+  // DEVICE
+  // =========================
+
+  @Get(':msnv/devices')
+  async findDevicesByMsnv(
+    @Param('msnv') msnv: string,
+  ) {
+    const employee =
+      await this.employeesService.findByMsnv(
+        msnv,
+      );
+
+    if (!employee) {
+      return {
+        success: false,
+        message: 'Không tìm thấy nhân viên',
+      };
+    }
+
+    const devices =
+      await this.employeesService.findDevicesByMsnv(
+        msnv,
+      );
+
+    return {
+      success: true,
+      data: devices,
+    };
+  }
+
   @Post(':msnv/devices')
   async addDevice(
     @Param('msnv') msnv: string,
@@ -42,7 +101,9 @@ export class EmployeesController {
     },
   ) {
     const employee =
-      await this.employeesService.findByMsnv(msnv);
+      await this.employeesService.findByMsnv(
+        msnv,
+      );
 
     if (!employee) {
       return {
@@ -84,22 +145,84 @@ export class EmployeesController {
     };
   }
 
-  @Post()
-  async create(
-    @Body()
-    body: {
-      msnv: string;
-      name: string;
-      email?: string;
-    },
+  @Patch('devices/:deviceId/disable')
+  async disableDevice(
+    @Param('deviceId') deviceId: string,
   ) {
-    const employee =
-      await this.employeesService.create(body);
+    const device =
+      await this.employeesService.disableDevice(
+        deviceId,
+      );
+
+    if (!device) {
+      return {
+        success: false,
+        message: 'Không tìm thấy thiết bị',
+      };
+    }
 
     return {
       success: true,
-      message: 'Tạo nhân viên thành công',
-      data: employee,
+      message: 'Đã khóa thiết bị',
+      data: {
+        id: device.id,
+        macAddress: device.macAddress,
+        isActive: device.isActive,
+      },
     };
   }
+
+  @Patch('devices/:deviceId/enable')
+  async enableDevice(
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device =
+      await this.employeesService.enableDevice(
+        deviceId,
+      );
+
+    if (!device) {
+      return {
+        success: false,
+        message: 'Không tìm thấy thiết bị',
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Đã mở khóa thiết bị',
+      data: {
+        id: device.id,
+        macAddress: device.macAddress,
+        isActive: device.isActive,
+      },
+    };
+  }
+
+    @Get(':msnv/sessions')
+    async findSessionsByMsnv(
+        @Param('msnv') msnv: string,
+    ) {
+        const employee =
+            await this.employeesService.findByMsnv(
+                msnv,
+            );
+
+        if (!employee) {
+            return {
+                success: false,
+                message: 'Không tìm thấy nhân viên',
+            };
+        }
+
+        const sessions =
+            await this.employeesService.findSessionsByMsnv(
+                msnv,
+            );
+
+        return {
+            success: true,
+            data: sessions,
+        };
+    }
 }

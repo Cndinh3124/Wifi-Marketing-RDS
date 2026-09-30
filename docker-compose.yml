@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: wifi-marketing-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wifi-auth
+      POSTGRES_PASSWORD: Admin@123
+      POSTGRES_DB: wifi-auth-db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
